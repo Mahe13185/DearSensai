@@ -1,0 +1,14 @@
+{
+  "name": "dearsensai-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DEARSENSAI — Learn. Recall. Improve. Offline-first personal active recall engine.",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "preview": "npm run preview --prefix frontend"
+  },
+  "keywords": ["active-recall", "spaced-repetition", "dsa", "java", "spring-boot", "offline-first", "pwa"],
+  "author": "Mahendra",
+  "license": "UNLICENSED"
+}
