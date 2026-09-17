@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MoshCourse, MoshVideo, MoshResource } from '../../core/types';
 import { moshRepo } from '../../storage/repositories';
-import { Film, PlayCircle, FileText, ChevronDown, ChevronRight, Layers, Clock, HardDrive, Info, Trash2, BookOpen, AlertCircle } from 'lucide-react';
+import { Film, PlayCircle, FileText, ChevronDown, ChevronRight, Layers, Clock, HardDrive, Info, Trash2, BookOpen, AlertCircle, Sparkles } from 'lucide-react';
+import { MoshLessonWorkspace } from './MoshLessonWorkspace';
 
 interface MoshCourseBrowserProps {
   onOpenImportModal: () => void;
@@ -14,6 +15,7 @@ export const MoshCourseBrowser: React.FC<MoshCourseBrowserProps> = ({
 }) => {
   const [courses, setCourses] = useState<MoshCourse[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+  const [selectedLessonVideo, setSelectedLessonVideo] = useState<MoshVideo | null>(null);
   const [videos, setVideos] = useState<MoshVideo[]>([]);
   const [resources, setResources] = useState<MoshResource[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -109,6 +111,17 @@ export const MoshCourseBrowser: React.FC<MoshCourseBrowserProps> = ({
     if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / 1024).toFixed(0)} KB`;
   };
+
+  // If a lesson is selected, show the MoshLessonWorkspace
+  if (selectedLessonVideo) {
+    return (
+      <MoshLessonWorkspace
+        video={selectedLessonVideo}
+        onBack={() => setSelectedLessonVideo(null)}
+        onRefreshData={onRefreshData}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -339,6 +352,7 @@ export const MoshCourseBrowser: React.FC<MoshCourseBrowserProps> = ({
                       {sec.videos.map((video, idx) => (
                         <div
                           key={video.id}
+                          onClick={() => setSelectedLessonVideo(video)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -347,6 +361,16 @@ export const MoshCourseBrowser: React.FC<MoshCourseBrowserProps> = ({
                             background: 'var(--bg-card)',
                             borderRadius: 'var(--radius-sm)',
                             border: '1px solid var(--border-subtle)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                            e.currentTarget.style.background = 'var(--bg-surface)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                            e.currentTarget.style.background = 'var(--bg-card)';
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -373,6 +397,30 @@ export const MoshCourseBrowser: React.FC<MoshCourseBrowserProps> = ({
                             <span style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B' }}>
                               {video.fileType}
                             </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLessonVideo(video);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'rgba(99, 102, 241, 0.12)',
+                                border: '1px solid rgba(99, 102, 241, 0.25)',
+                                color: 'var(--accent-primary)',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <Sparkles size={11} />
+                              <span>Workspace</span>
+                              <ChevronRight size={11} />
+                            </button>
                           </div>
                         </div>
                       ))}

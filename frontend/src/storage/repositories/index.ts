@@ -7,6 +7,8 @@ import {
   MoshCourse,
   MoshVideo,
   MoshResource,
+  MoshLessonContent,
+  KnowledgeDraft,
   ReviewSchedule,
   Attempt,
   MistakeLog,
@@ -569,11 +571,193 @@ export const moshRepo = {
     await queueSyncEvent('MOSH_RESOURCE', updated.id, 'UPDATE', updated);
   },
 
+  async getLessonContent(moshVideoId: string): Promise<MoshLessonContent | undefined> {
+    return await db.moshLessonContents.where('moshVideoId').equals(moshVideoId).first();
+  },
+
+  async saveLessonContent(content: MoshLessonContent): Promise<void> {
+    const updated: MoshLessonContent = {
+      ...content,
+      updatedAt: Date.now(),
+    };
+    await db.moshLessonContents.put(updated);
+    await queueSyncEvent('MOSH_LESSON_CONTENT', updated.id, 'CREATE', updated);
+  },
+
+  async deleteLessonContent(moshVideoId: string): Promise<void> {
+    await db.moshLessonContents.where('moshVideoId').equals(moshVideoId).delete();
+    await queueSyncEvent('MOSH_LESSON_CONTENT', moshVideoId, 'DELETE', { moshVideoId });
+  },
+
   async deleteCourse(courseId: string): Promise<void> {
+    await db.knowledgeDrafts.where('courseId').equals(courseId).delete();
+    await db.moshLessonContents.where('courseId').equals(courseId).delete();
     await db.moshVideos.where('courseId').equals(courseId).delete();
     await db.moshResources.where('courseId').equals(courseId).delete();
     await db.moshCourses.delete(courseId);
     await queueSyncEvent('MOSH_COURSE', courseId, 'DELETE', { id: courseId });
+  },
+};
+
+// --- KNOWLEDGE DRAFTS REPOSITORY (EXTRACTION CONTRACT & APPROVAL PIPELINE) ---
+export const knowledgeDraftRepo = {
+  async getDraftsByVideo(moshVideoId: string): Promise<KnowledgeDraft[]> {
+    return await db.knowledgeDrafts.where('moshVideoId').equals(moshVideoId).toArray();
+  },
+
+  async getDraftsByCourse(courseId: string): Promise<KnowledgeDraft[]> {
+    return await db.knowledgeDrafts.where('courseId').equals(courseId).toArray();
+  },
+
+  async getDraftById(id: string): Promise<KnowledgeDraft | undefined> {
+    return await db.knowledgeDrafts.get(id);
+  },
+
+  async saveDraft(draft: KnowledgeDraft): Promise<void> {
+    const updated: KnowledgeDraft = {
+      ...draft,
+      updatedAt: Date.now(),
+    };
+    await db.knowledgeDrafts.put(updated);
+    await queueSyncEvent('KNOWLEDGE_DRAFT', updated.id, 'CREATE', updated);
+  },
+
+  async saveDrafts(drafts: KnowledgeDraft[]): Promise<void> {
+    const now = Date.now();
+    const prepared = drafts.map((d) => ({
+      ...d,
+      updatedAt: now,
+    }));
+    await db.knowledgeDrafts.bulkPut(prepared);
+    for (const d of prepared) {
+      await queueSyncEvent('KNOWLEDGE_DRAFT', d.id, 'CREATE', d);
+    }
+  },
+
+  async updateDraft(draft: KnowledgeDraft): Promise<void> {
+    const updated: KnowledgeDraft = {
+      ...draft,
+      updatedAt: Date.now(),
+    };
+    await db.knowledgeDrafts.put(updated);
+    await queueSyncEvent('KNOWLEDGE_DRAFT', updated.id, 'UPDATE', updated);
+  },
+
+  async deleteDraft(id: string): Promise<void> {
+    await db.knowledgeDrafts.delete(id);
+    await queueSyncEvent('KNOWLEDGE_DRAFT', id, 'DELETE', { id });
+  },
+
+  /**
+   * APPROVAL LIFECYCLE:
+   * Converts a staged KnowledgeDraft into an active DEARSENSAI RevisionItem with initial SRS schedule.
+   * Links draft status -> 'APPROVED' and sets approvedItemId.
+   */
+  async approveDraft(
+    draftId: string,
+    customTopicId?: string
+  ): Promise<{ draft: KnowledgeDraft; revisionItem: RevisionItem }> {
+    const draft = await db.knowledgeDrafts.get(draftId);
+    if (!draft) {
+      throw new Error(`KnowledgeDraft with id ${draftId} not found`);
+    }
+
+    // 1. Resolve or ensure Topic and Subject for this course & section
+    let targetTopicId = customTopicId;
+
+    if (!targetTopicId) {
+      // Find existing subject for this course or create one
+      let subject = await db.subjects
+        .filter((s) => s.title.toLowerCase().trim() === draft.courseName.toLowerCase().trim())
+        .first();
+
+      if (!subject) {
+        // Fallback: check if any subject exists or create a new subject
+        const allSubjects = await db.subjects.toArray();
+        if (allSubjects.length > 0) {
+          subject = allSubjects[0];
+        } else {
+          subject = await subjectRepo.create({
+            id: `sub_${draft.courseId.replace(/[^a-z0-9]/g, '_')}`,
+            title: draft.courseName,
+            description: `Extracted from Mosh Course: ${draft.courseName}`,
+            color: 'var(--accent-primary)',
+            orderIndex: 1,
+          });
+        }
+      }
+
+      // Find existing topic under this subject matching sectionName or create one
+      const existingTopics = await db.topics.where('subjectId').equals(subject.id).toArray();
+      let topic = existingTopics.find(
+        (t) => t.title.toLowerCase().trim() === draft.sectionName.toLowerCase().trim()
+      );
+
+      if (!topic) {
+        topic = await topicRepo.create({
+          id: `top_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          subjectId: subject.id,
+          title: draft.sectionName,
+          description: `Knowledge from ${draft.sectionName}`,
+          orderIndex: existingTopics.length + 1,
+        });
+      }
+
+      targetTopicId = topic.id;
+    }
+
+    // 2. Map Draft Type to RevisionItemType
+    const itemType = draft.type === 'MISTAKE' ? 'CONCEPT' : draft.type;
+
+    // 3. Create active RevisionItem with exact source provenance
+    const revisionItem = await revisionItemRepo.create({
+      id: `rev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      topicId: targetTopicId,
+      type: itemType,
+      title: draft.title,
+      frontContent: draft.question,
+      backContent: draft.answer,
+      explanation: draft.explanation,
+      whyExplanation: draft.whyExplanation,
+      codeSnippet: draft.codeSnippet,
+      codeLanguage: draft.codeLanguage || 'java',
+      difficulty: draft.difficulty,
+      isWeak: draft.type === 'MISTAKE',
+      tags: ['Mosh', draft.courseName, draft.sectionName].filter(Boolean),
+      sourceMetadata: {
+        sourceType: 'MOSH',
+        courseId: draft.courseId,
+        videoId: draft.moshVideoId,
+        filePath: draft.sourceMetadata?.filePath,
+      },
+    });
+
+    // 4. Update Draft Status to APPROVED
+    draft.status = 'APPROVED';
+    draft.approvedItemId = revisionItem.id;
+    draft.updatedAt = Date.now();
+    await db.knowledgeDrafts.put(draft);
+    await queueSyncEvent('KNOWLEDGE_DRAFT', draft.id, 'UPDATE', draft);
+
+    return { draft, revisionItem };
+  },
+
+  /**
+   * REJECTION LIFECYCLE:
+   * Sets draft status to 'REJECTED'. Does NOT create or activate a RevisionItem.
+   */
+  async rejectDraft(draftId: string): Promise<KnowledgeDraft> {
+    const draft = await db.knowledgeDrafts.get(draftId);
+    if (!draft) {
+      throw new Error(`KnowledgeDraft with id ${draftId} not found`);
+    }
+
+    draft.status = 'REJECTED';
+    draft.updatedAt = Date.now();
+    await db.knowledgeDrafts.put(draft);
+    await queueSyncEvent('KNOWLEDGE_DRAFT', draft.id, 'UPDATE', draft);
+
+    return draft;
   },
 };
 
@@ -588,6 +772,8 @@ export const backupRepo = {
     const moshCourses = await db.moshCourses.toArray();
     const moshVideos = await db.moshVideos.toArray();
     const moshResources = await db.moshResources.toArray();
+    const moshLessonContents = await db.moshLessonContents.toArray();
+    const knowledgeDrafts = await db.knowledgeDrafts.toArray();
     const reviewSchedules = await db.reviewSchedules.toArray();
     const attempts = await db.attempts.toArray();
     const mistakes = await db.mistakes.toArray();
@@ -595,7 +781,7 @@ export const backupRepo = {
 
     const backup = {
       app: 'DEARSENSAI',
-      version: '1.3.0',
+      version: '1.5.0',
       exportedAt: new Date().toISOString(),
       metadata: {
         totalSubjects: subjects.length,
@@ -605,6 +791,8 @@ export const backupRepo = {
         totalMoshCourses: moshCourses.length,
         totalMoshVideos: moshVideos.length,
         totalMoshResources: moshResources.length,
+        totalMoshLessonContents: moshLessonContents.length,
+        totalKnowledgeDrafts: knowledgeDrafts.length,
         totalAttempts: attempts.length,
       },
       data: {
@@ -616,6 +804,8 @@ export const backupRepo = {
         moshCourses,
         moshVideos,
         moshResources,
+        moshLessonContents,
+        knowledgeDrafts,
         reviewSchedules,
         attempts,
         mistakes,
@@ -642,6 +832,8 @@ export const backupRepo = {
       if (data.moshCourses) await db.moshCourses.bulkPut(data.moshCourses);
       if (data.moshVideos) await db.moshVideos.bulkPut(data.moshVideos);
       if (data.moshResources) await db.moshResources.bulkPut(data.moshResources);
+      if (data.moshLessonContents) await db.moshLessonContents.bulkPut(data.moshLessonContents);
+      if (data.knowledgeDrafts) await db.knowledgeDrafts.bulkPut(data.knowledgeDrafts);
       if (data.reviewSchedules) await db.reviewSchedules.bulkPut(data.reviewSchedules);
       if (data.attempts) await db.attempts.bulkPut(data.attempts);
       if (data.mistakes) await db.mistakes.bulkPut(data.mistakes);

@@ -8,6 +8,8 @@ import {
   MoshCourse,
   MoshVideo,
   MoshResource,
+  MoshLessonContent,
+  KnowledgeDraft,
   ReviewSchedule,
   Attempt,
   MistakeLog,
@@ -24,6 +26,8 @@ export class DearSensaiDatabase extends Dexie {
   moshCourses!: Table<MoshCourse, string>;
   moshVideos!: Table<MoshVideo, string>;
   moshResources!: Table<MoshResource, string>;
+  moshLessonContents!: Table<MoshLessonContent, string>;
+  knowledgeDrafts!: Table<KnowledgeDraft, string>;
   reviewSchedules!: Table<ReviewSchedule, string>;
   attempts!: Table<Attempt, string>;
   mistakes!: Table<MistakeLog, string>;
@@ -43,6 +47,8 @@ export class DearSensaiDatabase extends Dexie {
       moshCourses: 'id, title, folderName, updatedAt',
       moshVideos: 'id, courseId, courseName, sectionName, relativePath, updatedAt',
       moshResources: 'id, courseId, courseName, resourceType, relativePath, updatedAt',
+      moshLessonContents: 'id, moshVideoId, courseId, updatedAt',
+      knowledgeDrafts: 'id, moshVideoId, courseId, type, status, updatedAt',
       reviewSchedules: 'id, revisionItemId, state, nextReviewDate, updatedAt',
       attempts: 'id, revisionItemId, sessionId, rating, timestamp',
       mistakes: 'id, revisionItemId, topicId, subjectId, resolved, lastFailedAt',

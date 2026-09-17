@@ -121,6 +121,65 @@ export interface MoshResource {
   updatedAt: number;
 }
 
+export interface MoshLessonContent {
+  id: string; // moshVideoId or composite id
+  moshVideoId: string;
+  courseId: string;
+  courseName: string;
+  sectionName: string;
+  lessonTitle: string;
+  content: string; // Transcript or lecture notes
+  notes?: string;
+  status: 'RAW' | 'STAGED' | 'EXTRACTED';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type KnowledgeDraftType =
+  | 'CONCEPT'
+  | 'FLASHCARD'
+  | 'WHY'
+  | 'LOGIC'
+  | 'CODE_RECALL'
+  | 'CODE_EXPLANATION'
+  | 'TIP'
+  | 'MISTAKE';
+
+export type KnowledgeDraftStatus = 'DRAFT' | 'APPROVED' | 'REJECTED';
+
+export interface KnowledgeDraft {
+  id: string; // unique draft identifier
+  moshVideoId: string;
+  courseId: string;
+  courseName: string;
+  sectionName: string;
+  lessonTitle: string;
+  type: KnowledgeDraftType;
+  title: string;
+  question: string; // prompt / question
+  answer: string; // concise answer
+  explanation?: string;
+  whyExplanation?: string;
+  codeSnippet?: string;
+  codeLanguage?: string;
+  difficulty?: CodeRecallDifficulty;
+  sourceMetadata: SourceMetadata;
+  status: KnowledgeDraftStatus;
+  approvedItemId?: string; // id of created RevisionItem when approved
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KnowledgeExtractionResult {
+  lessonId: string;
+  courseId: string;
+  courseName: string;
+  sectionName: string;
+  lessonTitle: string;
+  drafts: KnowledgeDraft[];
+  extractedAt: number;
+}
+
 export interface RevisionItem {
   id: RevisionItemId;
   topicId: TopicId;
@@ -237,7 +296,7 @@ export interface SessionLog {
 
 export interface SyncEvent {
   id: string;
-  entityType: 'SUBJECT' | 'TOPIC' | 'SUBTOPIC' | 'REVISION_ITEM' | 'ATTEMPT' | 'SCHEDULE' | 'MISTAKE' | 'CODING_PROBLEM' | 'MOSH_COURSE' | 'MOSH_VIDEO' | 'MOSH_RESOURCE';
+  entityType: 'SUBJECT' | 'TOPIC' | 'SUBTOPIC' | 'REVISION_ITEM' | 'ATTEMPT' | 'SCHEDULE' | 'MISTAKE' | 'CODING_PROBLEM' | 'MOSH_COURSE' | 'MOSH_VIDEO' | 'MOSH_RESOURCE' | 'MOSH_LESSON_CONTENT' | 'KNOWLEDGE_DRAFT';
   entityId: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
   payload: any;
